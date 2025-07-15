@@ -15,12 +15,17 @@ url = f"{BASE_URL}{API_ENDPOINT}"
 # 1. 准备请求参数
 parser = argparse.ArgumentParser(description="Convert PDF to Markdown using Stirling PDF API.")
 parser.add_argument("pdf_file_path", type=str, help="Path to the input PDF file.")
-parser.add_argument("--output", dest="output_markdown_path", type=str, default="output.md",
-                    help="Path to save the output Markdown file. Defaults to 'output.md'.")
+parser.add_argument("--output", dest="output_markdown_path", type=str,
+                    help="Path to save the output Markdown file. Defaults to PDF filename with .md extension.")
 args = parser.parse_args()
-
 pdf_file_path = args.pdf_file_path
-output_markdown_path = args.output_markdown_path
+
+# 如果没有指定输出路径，则使用PDF文件名作为默认值，并将后缀改为.md
+if args.output_markdown_path:
+    output_markdown_path = args.output_markdown_path
+else:
+    base_name = os.path.splitext(os.path.basename(pdf_file_path))[0]
+    output_markdown_path = f"{base_name}.md"
 
 # 2. 构建请求数据（multipart/form-data格式，用于上传文件）
 files = {
