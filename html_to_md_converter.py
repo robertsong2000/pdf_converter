@@ -1,17 +1,89 @@
 import argparse
 import os
+import re
 from pathlib import Path
 from markdownify import markdownify as md
+from bs4 import BeautifulSoup
+
+def clean_html_content(html_content):
+    """
+    使用 BeautifulSoup 预处理 HTML，移除 CSS 和 JavaScript 内容
+    """
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # 移除所有 script 标签
+    for script in soup.find_all('script'):
+        script.decompose()
+    
+    # 移除所有 style 标签
+    for style in soup.find_all('style'):
+        style.decompose()
+    
+    # 移除所有 link 标签（通常用于外部 CSS）
+    for link in soup.find_all('link'):
+        link.decompose()
+    
+    # 移除所有 meta 标签
+    for meta in soup.find_all('meta'):
+        meta.decompose()
+    
+    # 移除所有 noscript 标签
+    for noscript in soup.find_all('noscript'):
+        noscript.decompose()
+    
+    # 移除所有元素的 style 属性
+    for element in soup.find_all():
+        if element.has_attr('style'):
+            del element['style']
+        # 移除其他可能包含 CSS 的属性
+        for attr in ['class', 'id', 'onclick', 'onload', 'onmouseover', 'onmouseout']:
+            if element.has_attr(attr):
+                del element[attr]
+    
+    return str(soup)
+
+def remove_css_from_text(text):
+    """
+    从文本中移除 CSS 规则和 JavaScript 代码
+    """
+    # 移除 CSS 规则（包括 @media 查询）
+    text = re.sub(r'@media[^{]*\{[^{}]*\{[^{}]*\}[^{}]*\}', '', text, flags=re.DOTALL)
+    text = re.sub(r'@media[^{]*\{[^{}]*\}', '', text, flags=re.DOTALL)
+    text = re.sub(r'[^{}]*\{[^{}]*\}', '', text, flags=re.DOTALL)
+    
+    # 移除 JavaScript 函数和变量声明
+    text = re.sub(r'var\s+\w+\s*=.*?;', '', text, flags=re.DOTALL)
+    text = re.sub(r'function\s+\w+\s*\([^)]*\)\s*\{.*?\}', '', text, flags=re.DOTALL)
+    
+    # 移除多余的空行
+    text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
+    text = re.sub(r'^\s*\n', '', text, flags=re.MULTILINE)
+    
+    return text.strip()
 
 def html_to_md(html_content):
     """
     Converts HTML content to Markdown content with custom options.
+    先清理 HTML 内容，移除 CSS 和 JavaScript，然后转换为 Markdown。
     """
-    return md(html_content, 
-              strip=['script', 'style'], 
-              autolinks=True, 
-              strong_em_symbol='**', 
-              heading_style='ATX')
+    # 预处理 HTML，移除不需要的内容
+    cleaned_html = clean_html_content(html_content)
+    
+    # 转换为 Markdown
+    markdown_content = md(cleaned_html, 
+                         convert=['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 
+                                 'ul', 'ol', 'li', 'a', 'strong', 'em', 'b', 'i', 
+                                 'table', 'tr', 'td', 'th', 'thead', 'tbody',
+                                 'blockquote', 'pre', 'code', 'br', 'hr', 'span'],
+                         autolinks=True, 
+                         strong_em_symbol='**', 
+                         heading_style='ATX',
+                         escape_misc=False)
+    
+    # 后处理：移除可能残留的 CSS 和 JavaScript 内容
+    markdown_content = remove_css_from_text(markdown_content)
+    
+    return markdown_content
 
 def convert_file(input_filepath, output_filepath):
     """
