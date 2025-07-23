@@ -14,13 +14,32 @@ def parse_testcases(md_file_path, output_dir):
     # 创建输出目录
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
-    # 匹配测试用例模式
-    testcase_pattern = re.compile(
+    # 匹配测试用例模式 - 支持两种格式
+    # 格式1: "Test case :" 
+    testcase_pattern1 = re.compile(
         r'(?:\d+\.\d+(?:\.\d+)?\s+)?Test case :(.*?)(?=(?:\d+\.\d+(?:\.\d+)?\s+)?Test case :|Test Specification:|$)', 
         re.DOTALL
     )
     
-    testcases = testcase_pattern.findall(content)
+    # 格式2: "数字 Test Case Silk ID:"
+    testcase_pattern2 = re.compile(
+        r'\d+\s+Test Case Silk ID:(.*?)(?=\d+\s+Test Case Silk ID:|$)', 
+        re.DOTALL
+    )
+    
+    # 尝试两种模式匹配
+    testcases1 = testcase_pattern1.findall(content)
+    testcases2 = testcase_pattern2.findall(content)
+    
+    # 选择匹配到更多测试用例的模式
+    if len(testcases2) > len(testcases1):
+        testcases = testcases2
+        pattern_type = "Silk ID"
+        print(f"检测到 'Test Case Silk ID' 格式，找到 {len(testcases2)} 个测试用例")
+    else:
+        testcases = testcases1
+        pattern_type = "Test case"
+        print(f"检测到 'Test case' 格式，找到 {len(testcases1)} 个测试用例")
     
     for i, testcase in enumerate(testcases, 1):
         # 清理测试用例内容
@@ -50,7 +69,10 @@ def parse_testcases(md_file_path, output_dir):
         # 保存为单独文件
         output_file = os.path.join(output_dir, f'{testcase_name}.md')
         with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Test Case: ")
+            if pattern_type == "Silk ID":
+                f.write(f"# Test Case Silk ID: ")
+            else:
+                f.write(f"# Test Case: ")
             f.write(testcase)
     
     print(f"成功解析并保存了{len(testcases)}个测试用例到{output_dir}")
