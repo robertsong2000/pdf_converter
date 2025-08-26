@@ -603,14 +603,26 @@ def process_html_files(input_dir, output_dir):
         
         # 保存单个页面的测试用例
         if test_cases:
-            output_file = Path(output_dir) / f"test_cases_page_{page_number}.json"
+            # 使用测试用例ID作为文件名的一部分
+            if test_cases and len(test_cases) > 0 and test_cases[0].get('test_case_id'):
+                test_case_id = test_cases[0]['test_case_id']
+                output_file = Path(output_dir) / f"test_cases_id_{test_case_id}_page_{page_number}.json"
+            else:
+                output_file = Path(output_dir) / f"test_cases_page_{page_number}.json"
+            
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(test_cases, f, ensure_ascii=False, indent=2)
             print(f"Saved {len(test_cases)} test cases to {output_file}")
-    
+
     # 保存当前页面的测试用例
     if test_cases:
-        output_file = Path(output_dir) / f"test_cases_page_{page_number}.json"
+        # 使用测试用例ID作为文件名的一部分
+        if test_cases and len(test_cases) > 0 and test_cases[0].get('test_case_id'):
+            test_case_id = test_cases[0]['test_case_id']
+            output_file = Path(output_dir) / f"test_cases_id_{test_case_id}_page_{page_number}.json"
+        else:
+            output_file = Path(output_dir) / f"test_cases_page_{page_number}.json"
+        
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(test_cases, f, ensure_ascii=False, indent=2)
         print(f"Saved {len(test_cases)} test cases to {output_file}")
