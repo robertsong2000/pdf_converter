@@ -38,3 +38,5 @@ ez1_test_report/
 testspecs_pdf/
 *DVM.md
 .DS_Store
+CC_DVMToHtml/
+extracted_test_cases/
