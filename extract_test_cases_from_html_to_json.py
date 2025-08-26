@@ -248,7 +248,7 @@ def extract_test_cases_from_html(html_content, page_number):
                 # 测试脚本信息在后续段落中
                 next_elements = all_paragraphs[i+1:]
                 # 查找测试脚本信息的结束标记
-                end_markers = ['Test Case ID:', 'PreCondition:', 'Purpose:', 'Description:']
+                end_markers = ['Test Case ID:', 'PreCondition:', 'Purpose:', 'Description:', 'Requirements:']
                 
                 # 用于存储测试步骤的临时列表
                 step_elements = []
@@ -265,29 +265,31 @@ def extract_test_cases_from_html(html_content, page_number):
                     if 'Step' in next_text and 'Action' in next_text and 'Expected Result' in next_text:
                         continue
                     
-                    # 收集步骤元素
-                    if next_text:
-                        # 获取元素的top和left样式属性
-                        style = next_p.get('style', '')
-                        top_match = re.search(r'top:(\d+)px', style)
-                        left_match = re.search(r'left:(\d+)px', style)
-                        top = int(top_match.group(1)) if top_match else 0
-                        left = int(left_match.group(1)) if left_match else 0
-                        
-                        step_elements.append({
-                            'text': next_text,
-                            'top': top,
-                            'left': left
-                        })
+                    # 跳过空文本
+                    if not next_text:
+                        continue
+                    
+                    # 获取元素的top和left样式属性
+                    style = next_p.get('style', '')
+                    top_match = re.search(r'top:(\d+)px', style)
+                    left_match = re.search(r'left:(\d+)px', style)
+                    top = int(top_match.group(1)) if top_match else 0
+                    left = int(left_match.group(1)) if left_match else 0
+                    
+                    step_elements.append({
+                        'text': next_text,
+                        'top': top,
+                        'left': left,
+                        'element': next_p
+                    })
                 
-                # 根据位置信息组合测试步骤
                 # 按top值分组，同一行的元素top值相近
                 step_groups = {}
                 for element in step_elements:
                     # 找到相近的top值组
                     group_key = None
                     for key in step_groups.keys():
-                        if abs(key - element['top']) <= 20:  # 允许20px的误差
+                        if abs(key - element['top']) <= 15:  # 允许15px的误差
                             group_key = key
                             break
                     
@@ -305,7 +307,7 @@ def extract_test_cases_from_html(html_content, page_number):
                     
                     # 识别步骤号、动作和预期结果
                     if len(group) >= 1:
-                        # 第一个元素通常是步骤号或动作的一部分
+                        # 检查第一个元素是否是步骤号
                         first_element = group[0]
                         step_number_match = re.match(r'^\d+\s*$', first_element['text'])
                         
@@ -323,9 +325,9 @@ def extract_test_cases_from_html(html_content, page_number):
                             expected_result_parts = []
                             
                             for element in group[1:]:
-                                if element['left'] < 300:  # 动作区域
+                                if element['left'] < 250:  # 动作区域 (left < 250)
                                     action_parts.append(element['text'])
-                                else:  # 预期结果区域
+                                else:  # 预期结果区域 (left >= 250)
                                     expected_result_parts.append(element['text'])
                             
                             step["action"] = " ".join(action_parts)
@@ -333,24 +335,17 @@ def extract_test_cases_from_html(html_content, page_number):
                             
                             test_case["test_script"].append(step)
                         else:
-                            # 不是步骤号，可能是跨行的动作描述
-                            # 在这种情况下，我们需要累积这些文本，直到遇到下一个步骤号
-                            # 暂存这些文本，稍后处理
-                            if not hasattr(test_case, '_pending_action_parts'):
-                                test_case['_pending_action_parts'] = []
-                            test_case['_pending_action_parts'].append(first_element['text'])
-                            
-                            # 处理其他元素
-                            for element in group[1:]:
-                                test_case['_pending_action_parts'].append(element['text'])
-        
-        # 处理累积的动作文本
-        if '_pending_action_parts' in test_case and test_case['_pending_action_parts']:
-            if test_case["test_script"]:
-                # 将累积的文本添加到上一个步骤的动作中
-                test_case["test_script"][-1]["action"] += " " + " ".join(test_case['_pending_action_parts']).strip()
-            # 清除暂存的文本
-            del test_case['_pending_action_parts']
+                            # 不是步骤号，可能是跨行的动作或预期结果描述
+                            # 检查这些文本应该属于动作还是预期结果区域
+                            for element in group:
+                                if element['left'] < 250:  # 动作区域
+                                    if test_case["test_script"]:
+                                        # 添加到上一个步骤的动作中
+                                        test_case["test_script"][-1]["action"] += " " + element['text']
+                                else:  # 预期结果区域
+                                    if test_case["test_script"]:
+                                        # 添加到上一个步骤的预期结果中
+                                        test_case["test_script"][-1]["expected_result"] += " " + element['text']
         
         # 只有当测试用例有ID时才添加到结果中
         if test_case["test_case_id"]:
