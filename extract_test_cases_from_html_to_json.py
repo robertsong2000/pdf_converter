@@ -201,7 +201,7 @@ def extract_test_cases_from_html(html_content, page_number):
             # 查找PreCondition
             if 'PreCondition:' in text:
                 precondition_match = re.search(r'PreCondition:\s*(.*)', text, re.DOTALL)
-                if precondition_match:
+                if precondition_match and precondition_match.group(1).strip():
                     test_case["precondition"] = precondition_match.group(1).strip()
                 else:
                     # 如果没有在当前段落找到PreCondition，检查后续段落直到遇到其他标记
@@ -209,19 +209,39 @@ def extract_test_cases_from_html(html_content, page_number):
                     precondition_lines = []
                     while j < len(all_paragraphs):
                         next_text = all_paragraphs[j].get_text().strip()
-                        # 检查是否遇到其他标记
-                        if next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script', 'PostCondition')):
+                        if not next_text:
+                            j += 1
+                            continue
+                            
+                        # 检查是否遇到其他标记，但允许以·开头的文本
+                        is_other_marker = False
+                        for marker in ['Test', 'Purpose', 'Description', 'Requirements', 'Test Script', 'PostCondition']:
+                            if next_text.startswith(marker) and not next_text.startswith('·'):
+                                is_other_marker = True
+                                break
+                        
+                        if is_other_marker:
                             break
-                        if next_text:
-                            precondition_lines.append(next_text)
+                            
+                        # 收集PreCondition文本，包括以·开头的
+                        precondition_lines.append(next_text)
                         j += 1
+                    
                     if precondition_lines:
-                        test_case["precondition"] = " ".join(precondition_lines)
+                        # 清理PreCondition文本，移除开头的·和多余的空格
+                        cleaned_lines = []
+                        for line in precondition_lines:
+                            line = line.strip()
+                            if line.startswith('·'):
+                                line = line[1:].strip()
+                            if line:
+                                cleaned_lines.append(line)
+                        test_case["precondition"] = " ".join(cleaned_lines)
             
             # 查找PostCondition
             if 'PostCondition:' in text:
                 postcondition_match = re.search(r'PostCondition:\s*(.*)', text, re.DOTALL)
-                if postcondition_match:
+                if postcondition_match and postcondition_match.group(1).strip():
                     test_case["postcondition"] = postcondition_match.group(1).strip()
                 else:
                     # 如果没有在当前段落找到PostCondition，检查后续段落直到遇到其他标记
@@ -229,14 +249,34 @@ def extract_test_cases_from_html(html_content, page_number):
                     postcondition_lines = []
                     while j < len(all_paragraphs):
                         next_text = all_paragraphs[j].get_text().strip()
-                        # 检查是否遇到其他标记
-                        if next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script', 'PostCondition')):
+                        if not next_text:
+                            j += 1
+                            continue
+                            
+                        # 检查是否遇到其他标记，但允许以·开头的文本
+                        is_other_marker = False
+                        for marker in ['Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script']:
+                            if next_text.startswith(marker) and not next_text.startswith('·'):
+                                is_other_marker = True
+                                break
+                        
+                        if is_other_marker:
                             break
-                        if next_text:
-                            postcondition_lines.append(next_text)
+                            
+                        # 收集PostCondition文本，包括以·开头的
+                        postcondition_lines.append(next_text)
                         j += 1
+                    
                     if postcondition_lines:
-                        test_case["postcondition"] = " ".join(postcondition_lines)
+                        # 清理PostCondition文本，移除开头的·和多余的空格
+                        cleaned_lines = []
+                        for line in postcondition_lines:
+                            line = line.strip()
+                            if line.startswith('·'):
+                                line = line[1:].strip()
+                            if line:
+                                cleaned_lines.append(line)
+                        test_case["postcondition"] = " ".join(cleaned_lines)
             
             # 查找Description
             if 'Description:' in text or 'Test case Description:' in text:
