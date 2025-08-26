@@ -30,6 +30,9 @@ output.md
 # Ignore testcases directories
 testcases_*/
 test_cases_*/
+testspec_pdf/
+testcases/
+
 
 # Ignore testspecs_pdf directories and DVM.md files
 testspecs_pdf/
