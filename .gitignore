@@ -37,3 +37,4 @@ ez1_test_report/
 # Ignore testspecs_pdf directories and DVM.md files
 testspecs_pdf/
 *DVM.md
+.DS_Store
