@@ -84,11 +84,19 @@ def extract_test_cases_from_html(html_content, page_number):
                 if purpose_match:
                     test_case["purpose"] = purpose_match.group(1).strip()
                 else:
-                    # 如果没有在当前段落找到Purpose，检查下一个段落
-                    if i + 1 < len(all_paragraphs):
-                        next_text = all_paragraphs[i+1].get_text().strip()
-                        if next_text and not next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script')):
-                            test_case["purpose"] = next_text
+                    # 如果没有在当前段落找到Purpose，检查后续段落直到遇到其他标记
+                    j = i + 1
+                    purpose_lines = []
+                    while j < len(all_paragraphs):
+                        next_text = all_paragraphs[j].get_text().strip()
+                        # 检查是否遇到其他标记
+                        if next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script', 'PostCondition')):
+                            break
+                        if next_text:
+                            purpose_lines.append(next_text)
+                        j += 1
+                    if purpose_lines:
+                        test_case["purpose"] = " ".join(purpose_lines)
             
             # 查找PreCondition
             if 'PreCondition:' in text:
@@ -96,11 +104,19 @@ def extract_test_cases_from_html(html_content, page_number):
                 if precondition_match:
                     test_case["precondition"] = precondition_match.group(1).strip()
                 else:
-                    # 如果没有在当前段落找到PreCondition，检查下一个段落
-                    if i + 1 < len(all_paragraphs):
-                        next_text = all_paragraphs[i+1].get_text().strip()
-                        if next_text and not next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script')):
-                            test_case["precondition"] = next_text
+                    # 如果没有在当前段落找到PreCondition，检查后续段落直到遇到其他标记
+                    j = i + 1
+                    precondition_lines = []
+                    while j < len(all_paragraphs):
+                        next_text = all_paragraphs[j].get_text().strip()
+                        # 检查是否遇到其他标记
+                        if next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script', 'PostCondition')):
+                            break
+                        if next_text:
+                            precondition_lines.append(next_text)
+                        j += 1
+                    if precondition_lines:
+                        test_case["precondition"] = " ".join(precondition_lines)
             
             # 查找PostCondition
             if 'PostCondition:' in text:
@@ -108,11 +124,19 @@ def extract_test_cases_from_html(html_content, page_number):
                 if postcondition_match:
                     test_case["postcondition"] = postcondition_match.group(1).strip()
                 else:
-                    # 如果没有在当前段落找到PostCondition，检查下一个段落
-                    if i + 1 < len(all_paragraphs):
-                        next_text = all_paragraphs[i+1].get_text().strip()
-                        if next_text and not next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script')):
-                            test_case["postcondition"] = next_text
+                    # 如果没有在当前段落找到PostCondition，检查后续段落直到遇到其他标记
+                    j = i + 1
+                    postcondition_lines = []
+                    while j < len(all_paragraphs):
+                        next_text = all_paragraphs[j].get_text().strip()
+                        # 检查是否遇到其他标记
+                        if next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script', 'PostCondition')):
+                            break
+                        if next_text:
+                            postcondition_lines.append(next_text)
+                        j += 1
+                    if postcondition_lines:
+                        test_case["postcondition"] = " ".join(postcondition_lines)
             
             # 查找Description
             if 'Description:' in text or 'Test case Description:' in text:
@@ -120,11 +144,19 @@ def extract_test_cases_from_html(html_content, page_number):
                 if description_match:
                     test_case["description"] = description_match.group(2).strip()
                 else:
-                    # 如果没有在当前段落找到Description，检查下一个段落
-                    if i + 1 < len(all_paragraphs):
-                        next_text = all_paragraphs[i+1].get_text().strip()
-                        if next_text and not next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script')):
-                            test_case["description"] = next_text
+                    # 如果没有在当前段落找到Description，检查后续段落直到遇到其他标记
+                    j = i + 1
+                    description_lines = []
+                    while j < len(all_paragraphs):
+                        next_text = all_paragraphs[j].get_text().strip()
+                        # 检查是否遇到其他标记
+                        if next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script', 'PostCondition')):
+                            break
+                        if next_text:
+                            description_lines.append(next_text)
+                        j += 1
+                    if description_lines:
+                        test_case["description"] = " ".join(description_lines)
             
             # 查找需求表格
             if 'Requirements:' in text:
@@ -135,6 +167,9 @@ def extract_test_cases_from_html(html_content, page_number):
                 collecting = False
                 headers = []
                 header_found = False
+                
+                # 收集所有可能的需求行
+                requirement_lines = []
                 
                 for next_p in next_elements:
                     next_text = next_p.get_text().strip()
@@ -164,54 +199,61 @@ def extract_test_cases_from_html(html_content, page_number):
                             header_found = True
                             # 尝试分割文本以获取表头
 
-                    
                     # 如果正在收集需求信息
                     if collecting:
-                        cells = [cell.get_text().strip() for cell in next_p.find_all(['td', 'th'])]
-                        # 如果没有找到表格单元格，尝试从文本中提取单元格内容
-                        if not cells:
-                            # 尝试按空格分割文本，但更智能地处理
-                            # 先尝试按多个空格分割
-                            cells = re.split(r'\s{2,}', next_text)
-                            # 如果分割后的单元格数量不够，尝试按单个空格分割
-                            if len(cells) < 4:
-                                cells = next_text.split()
-                        
-                        if len(cells) >= 4:  # 确保有足够的列
-                            requirement = {
-                                "requirement": cells[0] if len(headers) > 0 else "",
-                                "req_id": cells[1] if len(headers) > 1 else "",
-                                "ver": cells[2] if len(headers) > 2 else "",
-                                "status": cells[3] if len(headers) > 3 else ""
-                            }
-                            test_case["requirements"].append(requirement)
-                        elif len(cells) >= 2:  # 至少有需求和Req ID两列
-                            requirement = {
-                                "requirement": cells[0] if len(headers) > 0 else "",
-                                "req_id": cells[1] if len(headers) > 1 else "",
-                                "ver": cells[2] if len(headers) > 2 and len(cells) > 2 else "",
-                                "status": cells[3] if len(headers) > 3 and len(cells) > 3 else ""
-                            }
-                            test_case["requirements"].append(requirement)
-                        elif len(cells) >= 1:  # 只有一列的情况
-                            requirement = {
-                                "requirement": cells[0] if len(headers) > 0 else "",
-                                "req_id": "",
-                                "ver": "",
-                                "status": ""
-                            }
-                            test_case["requirements"].append(requirement)
+                        requirement_lines.append(next_p)
+                
+                # 处理收集到的需求行
+                for req_p in requirement_lines:
+                    cells = [cell.get_text().strip() for cell in req_p.find_all(['td', 'th'])]
+                    # 如果没有找到表格单元格，尝试从文本中提取单元格内容
+                    if not cells:
+                        # 尝试按空格分割文本，但更智能地处理
+                        # 先尝试按多个空格分割
+                        cells = re.split(r'\s{2,}', req_p.get_text().strip())
+                        # 如果分割后的单元格数量不够，尝试按单个空格分割
+                        if len(cells) < 4:
+                            cells = req_p.get_text().strip().split()
+                    
+                    # 过滤掉空的单元格
+                    cells = [cell for cell in cells if cell]
+                    
+                    if len(cells) >= 4:  # 确保有足够的列
+                        requirement = {
+                            "requirement": cells[0] if len(headers) > 0 else "",
+                            "req_id": cells[1] if len(headers) > 1 else "",
+                            "ver": cells[2] if len(headers) > 2 else "",
+                            "status": cells[3] if len(headers) > 3 else ""
+                        }
+                        test_case["requirements"].append(requirement)
+                    elif len(cells) >= 2:  # 至少有需求和Req ID两列
+                        requirement = {
+                            "requirement": cells[0] if len(headers) > 0 else "",
+                            "req_id": cells[1] if len(headers) > 1 else "",
+                            "ver": cells[2] if len(headers) > 2 and len(cells) > 2 else "",
+                            "status": cells[3] if len(headers) > 3 and len(cells) > 3 else ""
+                        }
+                        test_case["requirements"].append(requirement)
+                    elif len(cells) >= 1:  # 只有一列的情况
+                        requirement = {
+                            "requirement": cells[0] if len(headers) > 0 else "",
+                            "req_id": "",
+                            "ver": "",
+                            "status": ""
+                        }
+                        test_case["requirements"].append(requirement)
             
             # 查找测试脚本描述
             if 'Test Script Description' in text:
                 # 测试脚本信息在后续段落中
                 next_elements = all_paragraphs[i+1:]
                 # 查找测试脚本信息的结束标记
-                end_markers = ['Result', 'Evaluation', 'Analysis']
-                collecting = False
-                headers = []
-                header_found = False
+                end_markers = ['Test Case ID:', 'PreCondition:', 'Purpose:', 'Description:']
                 
+                # 用于存储测试步骤的临时列表
+                step_elements = []
+                
+                # 收集测试步骤元素
                 for next_p in next_elements:
                     next_text = next_p.get_text().strip()
                     
@@ -219,72 +261,96 @@ def extract_test_cases_from_html(html_content, page_number):
                     if any(marker in next_text for marker in end_markers):
                         break
                     
-                    # 检查是否是表头行
-                    if not header_found and ('Step' in next_text and 'Action' in next_text):
-                        collecting = True
-                        header_found = True
-                        # 提取表头
-                        headers = [cell.get_text().strip() for cell in next_p.find_all(['td', 'th'])]
-                        # 如果没有找到表格单元格，尝试从文本中提取表头
-                        if not headers:
-                            headers = ['Step', 'Action', 'Expected Result']
+                    # 跳过表头行
+                    if 'Step' in next_text and 'Action' in next_text and 'Expected Result' in next_text:
                         continue
-                    # 如果还没有找到表头，检查当前段落是否包含表头信息
-                    elif not header_found:
-                        # 检查是否包含测试脚本表头的关键字
-                        if 'Step' in next_text and 'Action' in next_text:
-                            collecting = True
-                            header_found = True
                     
-                    # 如果正在收集测试脚本信息
-                    if collecting:
-                        cells = [cell.get_text().strip() for cell in next_p.find_all(['td', 'th'])]
-                        # 如果没有找到表格单元格，尝试从文本中提取单元格内容
-                        if not cells:
-                            # 尝试按空格分割文本，但更智能地处理
-                            # 先尝试按多个空格分割
-                            cells = re.split(r'\s{2,}', next_text)
-                            # 如果分割后的单元格数量不够，尝试按单个空格分割
-                            if len(cells) < 2:
-                                cells = next_text.split()
+                    # 收集步骤元素
+                    if next_text:
+                        # 获取元素的top和left样式属性
+                        style = next_p.get('style', '')
+                        top_match = re.search(r'top:(\d+)px', style)
+                        left_match = re.search(r'left:(\d+)px', style)
+                        top = int(top_match.group(1)) if top_match else 0
+                        left = int(left_match.group(1)) if left_match else 0
                         
-                        if len(cells) >= 2:  # 确保至少有步骤和动作两列
+                        step_elements.append({
+                            'text': next_text,
+                            'top': top,
+                            'left': left
+                        })
+                
+                # 根据位置信息组合测试步骤
+                # 按top值分组，同一行的元素top值相近
+                step_groups = {}
+                for element in step_elements:
+                    # 找到相近的top值组
+                    group_key = None
+                    for key in step_groups.keys():
+                        if abs(key - element['top']) <= 20:  # 允许20px的误差
+                            group_key = key
+                            break
+                    
+                    if group_key is None:
+                        group_key = element['top']
+                        step_groups[group_key] = []
+                    
+                    step_groups[group_key].append(element)
+                
+                # 处理每个组，构建测试步骤
+                for top_value in sorted(step_groups.keys()):
+                    group = step_groups[top_value]
+                    # 按left值排序
+                    group.sort(key=lambda x: x['left'])
+                    
+                    # 识别步骤号、动作和预期结果
+                    if len(group) >= 1:
+                        # 第一个元素通常是步骤号或动作的一部分
+                        first_element = group[0]
+                        step_number_match = re.match(r'^\d+\s*$', first_element['text'])
+                        
+                        if step_number_match:
+                            # 确实是步骤号
+                            step_number = first_element['text'].strip()
                             step = {
-                                "step": cells[0] if len(headers) > 0 else "",
-                                "action": cells[1] if len(headers) > 1 else ""
+                                "step": step_number,
+                                "action": "",
+                                "expected_result": ""
                             }
-                            # 检查是否有预期结果列
-                            if len(headers) > 2 and 'Expected Result' in headers[2]:
-                                # 如果有预期结果列，尝试从下一个段落获取预期结果
-                                if len(cells) > 2:
-                                    step["expected_result"] = cells[2]
-                                else:
-                                    # 检查下一个段落是否包含预期结果
-                                    next_index = all_paragraphs.index(next_p) + 1
-                                    if next_index < len(all_paragraphs):
-                                        next_paragraph = all_paragraphs[next_index]
-                                        next_paragraph_text = next_paragraph.get_text().strip()
-                                        # 简单检查是否可能是预期结果（这里可能需要更复杂的逻辑）
-                                        if next_paragraph_text and not any(marker in next_paragraph_text for marker in ['Step', 'Action', 'Requirement', 'Purpose', 'PreCondition']):
-                                            step["expected_result"] = next_paragraph_text
+                            
+                            # 处理动作和预期结果
+                            action_parts = []
+                            expected_result_parts = []
+                            
+                            for element in group[1:]:
+                                if element['left'] < 300:  # 动作区域
+                                    action_parts.append(element['text'])
+                                else:  # 预期结果区域
+                                    expected_result_parts.append(element['text'])
+                            
+                            step["action"] = " ".join(action_parts)
+                            step["expected_result"] = " ".join(expected_result_parts)
+                            
                             test_case["test_script"].append(step)
-                        elif len(cells) >= 1:  # 至少有动作一列
-                            step = {
-                                "step": cells[0] if len(headers) > 0 and len(cells) > 0 else "",
-                                "action": cells[0] if len(headers) > 1 and len(cells) > 0 else ""
-                            }
-                            test_case["test_script"].append(step)
-                        else:  # 处理没有单元格的情况
-                            # 检查段落文本是否包含步骤信息
-                            if 'Step' in next_text or 'Action' in next_text:
-                                # 尝试从文本中提取步骤信息
-                                step_match = re.search(r'(\d+)\s+(.*)', next_text)
-                                if step_match:
-                                    step = {
-                                        "step": step_match.group(1),
-                                        "action": step_match.group(2)
-                                    }
-                                    test_case["test_script"].append(step)
+                        else:
+                            # 不是步骤号，可能是跨行的动作描述
+                            # 在这种情况下，我们需要累积这些文本，直到遇到下一个步骤号
+                            # 暂存这些文本，稍后处理
+                            if not hasattr(test_case, '_pending_action_parts'):
+                                test_case['_pending_action_parts'] = []
+                            test_case['_pending_action_parts'].append(first_element['text'])
+                            
+                            # 处理其他元素
+                            for element in group[1:]:
+                                test_case['_pending_action_parts'].append(element['text'])
+        
+        # 处理累积的动作文本
+        if '_pending_action_parts' in test_case and test_case['_pending_action_parts']:
+            if test_case["test_script"]:
+                # 将累积的文本添加到上一个步骤的动作中
+                test_case["test_script"][-1]["action"] += " " + " ".join(test_case['_pending_action_parts']).strip()
+            # 清除暂存的文本
+            del test_case['_pending_action_parts']
         
         # 只有当测试用例有ID时才添加到结果中
         if test_case["test_case_id"]:
@@ -294,6 +360,13 @@ def extract_test_cases_from_html(html_content, page_number):
             print(f"Test case without ID found on page {page_number}: {test_case['title']}")
             # 如果标题包含"Test case"，但没有ID，也添加到结果中
             if "Test case" in test_case["title"]:
+                # 处理累积的动作文本（即使没有ID）
+                if '_pending_action_parts' in test_case and test_case['_pending_action_parts']:
+                    if test_case["test_script"]:
+                        # 将累积的文本添加到上一个步骤的动作中
+                        test_case["test_script"][-1]["action"] += " " + " ".join(test_case['_pending_action_parts']).strip()
+                    # 清除暂存的文本
+                    del test_case['_pending_action_parts']
                 test_cases.append(test_case)
     
     return test_cases
