@@ -181,7 +181,7 @@ def extract_test_cases_from_html(html_content, page_number):
             # 查找Purpose
             if 'Purpose:' in text:
                 purpose_match = re.search(r'Purpose:\s*(.*)', text, re.DOTALL)
-                if purpose_match:
+                if purpose_match and purpose_match.group(1).strip():
                     test_case["purpose"] = purpose_match.group(1).strip()
                 else:
                     # 如果没有在当前段落找到Purpose，检查后续段落直到遇到其他标记
@@ -189,14 +189,34 @@ def extract_test_cases_from_html(html_content, page_number):
                     purpose_lines = []
                     while j < len(all_paragraphs):
                         next_text = all_paragraphs[j].get_text().strip()
-                        # 检查是否遇到其他标记
-                        if next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script', 'PostCondition')):
+                        if not next_text:
+                            j += 1
+                            continue
+                            
+                        # 检查是否遇到其他标记，但允许以·开头的文本
+                        is_other_marker = False
+                        for marker in ['Test', 'PreCondition', 'Description', 'Requirements', 'Test Script', 'PostCondition']:
+                            if next_text.startswith(marker) and not next_text.startswith('·'):
+                                is_other_marker = True
+                                break
+                        
+                        if is_other_marker:
                             break
-                        if next_text:
-                            purpose_lines.append(next_text)
+                            
+                        # 收集Purpose文本，包括以·开头的
+                        purpose_lines.append(next_text)
                         j += 1
+                    
                     if purpose_lines:
-                        test_case["purpose"] = " ".join(purpose_lines)
+                        # 清理Purpose文本，移除开头的·和多余的空格
+                        cleaned_lines = []
+                        for line in purpose_lines:
+                            line = line.strip()
+                            if line.startswith('·'):
+                                line = line[1:].strip()
+                            if line:
+                                cleaned_lines.append(line)
+                        test_case["purpose"] = " ".join(cleaned_lines)
             
             # 查找PreCondition
             if 'PreCondition:' in text:
