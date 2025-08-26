@@ -164,35 +164,83 @@ def parse_test_report(html_content, output_dir):
     """
     soup = BeautifulSoup(html_content, 'html.parser')
     
-    # 查找所有测试用例
-    test_cases = soup.find_all('big', class_='Heading3')
+    # 查找所有测试用例标题（包含"Test Case Silk ID"的<a>标签）
+    test_case_links = []
+    all_headings = soup.find_all('big', class_='Heading3')
+    
+    for heading in all_headings:
+        # 查找heading中的<a>标签
+        link = heading.find('a')
+        if link:
+            link_text = link.get_text().strip()
+            # 只选择包含"Test Case Silk ID"的链接作为测试用例
+            if 'Test Case Silk ID' in link_text:
+                test_case_links.append(link)
     
     # 创建输出目录
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     # 解析每个测试用例
-    for i, test_case in enumerate(test_cases):
+    for i, test_case_link in enumerate(test_case_links):
         # 获取测试用例名称
-        test_case_text = test_case.get_text().strip()
+        test_case_text = test_case_link.get_text().strip()
         # 提取测试用例ID和名称
-        if ':' in test_case_text:
-            parts = test_case_text.split(':', 2)
-            if len(parts) >= 3:
-                test_case_id = parts[1].strip()
-                test_case_name = parts[2].strip()
+        # 格式: "序号 Test Case Silk ID:ID: 名称: 结果"
+        if 'Test Case Silk ID:' in test_case_text:
+            # 使用正则表达式提取ID和名称
+            # 格式: "序号 Test Case Silk ID:ID: 名称: 结果"
+            # 先尝试匹配完整的格式
+            match = re.search(r'Test Case Silk ID:(\d+):\s*(.*?):\s*(Passed|Failed)', test_case_text)
+            if match:
+                test_case_id = match.group(1)
+                test_case_name = match.group(2).strip()
             else:
-                test_case_id = str(i)
-                test_case_name = test_case_text
+                # 尝试另一种格式，其中结果在最后
+                match = re.search(r'Test Case Silk ID:(\d+):\s*(.*?)\s*:\s*(Passed|Failed)$', test_case_text)
+                if match:
+                    test_case_id = match.group(1)
+                    test_case_name = match.group(2).strip()
+                else:
+                    # 再尝试匹配没有结果的格式
+                    match = re.search(r'Test Case Silk ID:(\d+):\s*(.*?)(?:\s*:)?$', test_case_text)
+                    if match:
+                        test_case_id = match.group(1)
+                        test_case_name = match.group(2).strip()
+                    else:
+                        # 如果正则表达式不匹配，尝试使用旧方法
+                        parts = test_case_text.split(':')
+                        if len(parts) >= 4:
+                            test_case_id = parts[2].strip()  # ID在第三个冒号后
+                            # 名称在第四个冒号后，结果在最后
+                            test_case_name = parts[3].strip()
+                            # 如果还有更多部分，可能是结果信息
+                            if len(parts) > 4:
+                                test_case_name += '_' + '_'.join(parts[4:]).strip()
+                        else:
+                            test_case_id = str(i)
+                            test_case_name = test_case_text
         else:
             test_case_id = str(i)
             test_case_name = test_case_text
         
         # 清理测试用例名称，用作文件名
-        filename = re.sub(r'[^a-zA-Z0-9_\-]', '', test_case_name.replace(' ', '_'))
+        # 保留ID和结果信息在文件名中
+        clean_name = re.sub(r'[^a-zA-Z0-9_\-: ]', '', test_case_name)
+        filename = re.sub(r'[^a-zA-Z0-9_\-]', '_', clean_name.replace(' ', '_'))
+        # 确保文件名不为空
+        if not filename:
+            filename = f"test_case_{test_case_id}"
+        # 确保文件名不会过长
+        if len(filename) > 100:
+            filename = filename[:100]
         
         # 查找测试用例的详细信息
-        # 测试用例的详细信息在下一个兄弟元素中
-        details = test_case.find_parent('table').find_next_sibling()
+        # 测试用例的详细信息在父级table的下一个兄弟元素中
+        parent_table = test_case_link.find_parent('table')
+        if parent_table:
+            details = parent_table.find_next_sibling()
+        else:
+            details = None
         
         # 初始化测试用例数据
         test_case_data = {
