@@ -344,84 +344,104 @@ def extract_test_cases_from_html(html_content, page_number):
                 next_elements = all_paragraphs[i+1:]
                 # 查找需求信息的结束标记
                 end_markers = ['Test Script Description', 'Test Script', 'Step Action']
-                collecting = False
-                headers = []
-                header_found = False
                 
-                # 收集所有可能的需求行
-                requirement_lines = []
+                # 收集所有段落，按top值排序来模拟表格行
+                requirement_data = []
                 
-                for next_p in next_elements:
+                # 首先收集所有带有样式的段落
+                for j, next_p in enumerate(next_elements):
                     next_text = next_p.get_text().strip()
+                    if not next_text:
+                        continue
                     
                     # 检查是否到达结束标记
                     if any(marker in next_text for marker in end_markers):
                         break
                     
-                    # 检查是否是表头行
-                    if not header_found and ('Requirement' in next_text and ('Req ID' in next_text or 'Requirement' in next_text)):
-                        collecting = True
-                        header_found = True
-                        # 提取表头
-                        headers = [cell.get_text().strip() for cell in next_p.find_all(['td', 'th'])]
-                        # 如果没有找到表格单元格，尝试从文本中提取表头
-                        if not headers:
-                            # 分割表头文本
-                            header_text = next_text.replace('Requirement', '').replace('Req ID', '').replace('Ver', '').replace('ASIL', '').replace('Status', '').strip()
-                            if header_text:
-                                headers = ['Requirement', 'Req ID', 'Ver', 'Status']
-                        continue
-                    # 如果还没有找到表头，检查当前段落是否包含表头信息
-                    elif not header_found:
-                        # 检查是否包含需求表头的关键字
+                    # 获取元素的样式属性用于定位
+                    style = next_p.get('style', '')
+                    top_match = re.search(r'top:(\d+)px', style)
+                    left_match = re.search(r'left:(\d+)px', style)
+                    
+                    if top_match and left_match:
+                        top = int(top_match.group(1))
+                        left = int(left_match.group(1))
+                        
+                        # 排除表头行
                         if 'Requirement' in next_text and 'Req ID' in next_text:
-                            collecting = True
-                            header_found = True
-                            # 尝试分割文本以获取表头
-
-                    # 如果正在收集需求信息
-                    if collecting:
-                        requirement_lines.append(next_p)
+                            continue
+                        
+                        # 收集所有非空的文本
+                        if next_text and next_text != 'Requirement':
+                            requirement_data.append({
+                                'text': next_text,
+                                'top': top,
+                                'left': left
+                            })
                 
-                # 处理收集到的需求行
-                for req_p in requirement_lines:
-                    cells = [cell.get_text().strip() for cell in req_p.find_all(['td', 'th'])]
-                    # 如果没有找到表格单元格，尝试从文本中提取单元格内容
-                    if not cells:
-                        # 尝试按空格分割文本，但更智能地处理
-                        # 先尝试按多个空格分割
-                        cells = re.split(r'\s{2,}', req_p.get_text().strip())
-                        # 如果分割后的单元格数量不够，尝试按单个空格分割
-                        if len(cells) < 4:
-                            cells = req_p.get_text().strip().split()
+                # 按top值分组，同一行的元素top值相近
+                if requirement_data:
+                    rows = {}
+                    for item in requirement_data:
+                        # 找到相近的top值组（允许15px误差）
+                        row_key = None
+                        for key in rows.keys():
+                            if abs(key - item['top']) <= 15:
+                                row_key = key
+                                break
+                        
+                        if row_key is None:
+                            row_key = item['top']
+                            rows[row_key] = []
+                        
+                        rows[row_key].append(item)
                     
-                    # 过滤掉空的单元格
-                    cells = [cell for cell in cells if cell]
-                    
-                    if len(cells) >= 4:  # 确保有足够的列
-                        requirement = {
-                            "requirement": cells[0] if len(headers) > 0 else "",
-                            "req_id": cells[1] if len(headers) > 1 else "",
-                            "ver": cells[2] if len(headers) > 2 else "",
-                            "status": cells[3] if len(headers) > 3 else ""
-                        }
-                        test_case["requirements"].append(requirement)
-                    elif len(cells) >= 2:  # 至少有需求和Req ID两列
-                        requirement = {
-                            "requirement": cells[0] if len(headers) > 0 else "",
-                            "req_id": cells[1] if len(headers) > 1 else "",
-                            "ver": cells[2] if len(headers) > 2 and len(cells) > 2 else "",
-                            "status": cells[3] if len(headers) > 3 and len(cells) > 3 else ""
-                        }
-                        test_case["requirements"].append(requirement)
-                    elif len(cells) >= 1:  # 只有一列的情况
-                        requirement = {
-                            "requirement": cells[0] if len(headers) > 0 else "",
-                            "req_id": "",
-                            "ver": "",
-                            "status": ""
-                        }
-                        test_case["requirements"].append(requirement)
+                    # 处理每一行数据
+                    for top_value in sorted(rows.keys()):
+                        row_items = rows[top_value]
+                        # 按left值排序来识别列
+                        row_items.sort(key=lambda x: x['left'])
+                        
+                        # 提取列数据
+                        columns = [item['text'] for item in row_items]
+                        
+                        # 根据列数和位置判断数据结构
+                        if len(columns) >= 4:
+                            # 标准的4列数据：Requirement, Req ID, Ver, Status
+                            requirement = {
+                                "requirement": columns[0],
+                                "req_id": columns[1],
+                                "ver": columns[2] if len(columns) > 2 else "",
+                                "status": columns[3] if len(columns) > 3 else ""
+                            }
+                            test_case["requirements"].append(requirement)
+                        elif len(columns) == 3:
+                            # 3列数据：Requirement, Req ID, Ver
+                            requirement = {
+                                "requirement": columns[0],
+                                "req_id": columns[1],
+                                "ver": columns[2],
+                                "status": ""
+                            }
+                            test_case["requirements"].append(requirement)
+                        elif len(columns) == 2:
+                            # 2列数据：Requirement, Req ID
+                            requirement = {
+                                "requirement": columns[0],
+                                "req_id": columns[1],
+                                "ver": "",
+                                "status": ""
+                            }
+                            test_case["requirements"].append(requirement)
+                        elif len(columns) == 1 and columns[0] and not columns[0].startswith('Test'):
+                            # 单列数据：只有Requirement
+                            requirement = {
+                                "requirement": columns[0],
+                                "req_id": "",
+                                "ver": "",
+                                "status": ""
+                            }
+                            test_case["requirements"].append(requirement)
             
             # 查找测试脚本描述
             if 'Test Script Description' in text:
