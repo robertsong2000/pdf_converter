@@ -263,12 +263,11 @@ def parse_test_report(html_content, output_dir):
                         description = cells[2].get_text().strip()
                         result = cells[3].get_text().strip()
                         
-                        # 添加到测试步骤列表
+                        # 添加到测试步骤列表，不包含单次测试结果
                         test_case_data["steps"].append({
                             "timestamp": timestamp,
                             "test_step": test_step,
-                            "description": description,
-                            "result": result
+                            "description": description
                         })
         
         # 保存为JSON文件
