@@ -241,7 +241,7 @@ def extract_test_cases_from_html(html_content, page_number):
             # 查找Description
             if 'Description:' in text or 'Test case Description:' in text:
                 description_match = re.search(r'(Test case )?Description:\s*(.*)', text, re.DOTALL)
-                if description_match:
+                if description_match and description_match.group(2).strip():
                     test_case["description"] = description_match.group(2).strip()
                 else:
                     # 如果没有在当前段落找到Description，检查后续段落直到遇到其他标记
@@ -249,14 +249,34 @@ def extract_test_cases_from_html(html_content, page_number):
                     description_lines = []
                     while j < len(all_paragraphs):
                         next_text = all_paragraphs[j].get_text().strip()
-                        # 检查是否遇到其他标记
-                        if next_text.startswith(('Test', 'Purpose', 'PreCondition', 'Description', 'Requirements', 'Test Script', 'PostCondition')):
+                        if not next_text:
+                            j += 1
+                            continue
+                            
+                        # 检查是否遇到其他标记，但允许以·开头的描述文本
+                        is_other_marker = False
+                        for marker in ['Test', 'Purpose', 'PreCondition', 'Requirements', 'Test Script', 'PostCondition']:
+                            if next_text.startswith(marker) and not next_text.startswith('·'):
+                                is_other_marker = True
+                                break
+                        
+                        if is_other_marker:
                             break
-                        if next_text:
-                            description_lines.append(next_text)
+                            
+                        # 收集描述文本，包括以·开头的
+                        description_lines.append(next_text)
                         j += 1
+                    
                     if description_lines:
-                        test_case["description"] = " ".join(description_lines)
+                        # 清理描述文本，移除开头的·和多余的空格
+                        cleaned_lines = []
+                        for line in description_lines:
+                            line = line.strip()
+                            if line.startswith('·'):
+                                line = line[1:].strip()
+                            if line:
+                                cleaned_lines.append(line)
+                        test_case["description"] = " ".join(cleaned_lines)
             
             # 查找需求表格
             if 'Requirements:' in text:
