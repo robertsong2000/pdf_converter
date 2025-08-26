@@ -6,66 +6,83 @@ import json
 
 def extract_test_script_from_html(html_content, page_number):
     """
-    从HTML内容中提取测试脚本信息
-    专门用于提取测试脚本部分
+    从HTML内容中提取测试脚本步骤
     """
     soup = BeautifulSoup(html_content, 'html.parser')
     test_script = []
     
-    # 查找测试脚本描述部分
+    # 查找所有段落
     all_paragraphs = soup.find_all('p')
     
-    # 查找"Test Script Description"或包含步骤的段落
-    found_script_start = False
-    current_step = None
-    step_counter = 1
-    
-    for p in all_paragraphs:
+    # 查找步骤开始的标记
+    step_start_index = None
+    for i, p in enumerate(all_paragraphs):
         text = p.get_text().strip()
+        style = p.get('style', '')
+        left_match = re.search(r'left:(\d+)px', style)
+        left_pos = int(left_match.group(1)) if left_match else 0
         
-        # 跳过空行
+        # 查找"Step Action"或"Step"作为开始标记
+        if 'Step Action' in text or ('Step' in text and left_pos < 200):
+            step_start_index = i
+            break
+        # 或者查找数字开头的步骤
+        elif re.match(r'\d+', text) and left_pos < 200:
+            step_start_index = i
+            break
+    
+    if step_start_index is None:
+        # 如果没有找到明确的开始标记，尝试从包含步骤格式的段落开始
+        for i, p in enumerate(all_paragraphs):
+            text = p.get_text().strip()
+            if re.match(r'\d+\s+Read DID', text):
+                step_start_index = i
+                break
+    
+    if step_start_index is None:
+        return test_script
+    
+    # 从步骤开始处处理
+    paragraphs_to_process = all_paragraphs[step_start_index:]
+    
+    # 处理步骤
+    current_step = None
+    for p in paragraphs_to_process:
+        text = p.get_text().strip()
         if not text:
             continue
+        
+        style = p.get('style', '')
+        left_match = re.search(r'left:(\d+)px', style)
+        left_pos = int(left_match.group(1)) if left_match else 0
+        top_match = re.search(r'top:(\d+)px', style)
+        top_pos = int(top_match.group(1)) if top_match else 0
+        
+        # 查找步骤数字
+        step_match = re.match(r'(\d+)', text)
+        if step_match and left_pos < 200:
+            # 保存前一个步骤
+            if current_step and (current_step["action"] or current_step["expected_result"]):
+                test_script.append(current_step)
             
-        # 查找测试脚本开始标记
-        if 'Test Script Description' in text:
-            found_script_start = True
-            continue
-            
-        if found_script_start:
-            # 检查是否是步骤数字
-            step_match = re.match(r'^\s*(\d+)\s*$', text)
-            if step_match:
-                # 保存前一个步骤
-                if current_step and (current_step["action"] or current_step["expected_result"]):
-                    test_script.append(current_step)
-                
-                current_step = {
-                    "step": str(step_counter),
-                    "action": "",
-                    "expected_result": ""
-                }
-                step_counter += 1
-                continue
-            
+            # 创建新步骤
+            current_step = {
+                "step": step_match.group(1),
+                "action": text[len(step_match.group(1)):].strip(),
+                "expected_result": ""
+            }
+        elif current_step:
             # 收集动作和预期结果
-            if current_step:
-                # 通过HTML结构判断是动作还是预期结果
-                style = p.get('style', '')
-                left_match = re.search(r'left:(\d+)px', style)
-                left_pos = int(left_match.group(1)) if left_match else 0
-                
-                # 根据位置判断内容类型
-                if left_pos < 300:  # 动作区域
-                    if current_step["action"]:
-                        current_step["action"] += " " + text
-                    else:
-                        current_step["action"] = text
-                else:  # 预期结果区域
-                    if current_step["expected_result"]:
-                        current_step["expected_result"] += " " + text
-                    else:
-                        current_step["expected_result"] = text
+            if left_pos < 300:  # 动作区域
+                if current_step["action"]:
+                    current_step["action"] += " " + text
+                else:
+                    current_step["action"] = text
+            else:  # 预期结果区域
+                if current_step["expected_result"]:
+                    current_step["expected_result"] += " " + text
+                else:
+                    current_step["expected_result"] = text
     
     # 添加最后一个步骤
     if current_step and (current_step["action"] or current_step["expected_result"]):
@@ -80,13 +97,13 @@ def has_test_script_only(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     text = soup.get_text()
     
-    # 检查是否有测试用例标题 - 放宽匹配条件
-    has_test_case = bool(re.search(r'\d+(\.\d+)*\s+Test case', text, re.IGNORECASE))
+    # 检查是否有测试用例标题 - 严格匹配格式
+    has_test_case = bool(re.search(r'\d+(\.\d+)*\s+Test case\s*[:\s].*\(Ver:\s*\d+\)', text))
     
-    # 检查是否有测试脚本 - 更精确地查找测试脚本
-    has_script = ('Test Script Description' in text or 
-                 'Test Script' in text or
-                 re.search(r'Step\s+\d+', text, re.IGNORECASE))
+    # 检查是否有测试脚本 - 查找步骤格式
+    has_script = bool(re.search(r'Step\s+Action', text, re.IGNORECASE)) or \
+                   bool(re.search(r'\d+\s+Read DID', text, re.IGNORECASE)) or \
+                   bool(re.search(r'\d+\s+[A-Z][a-z]', text))
     
     return has_script and not has_test_case
 
@@ -102,19 +119,17 @@ def extract_test_cases_from_html(html_content, page_number):
     # 查找所有可能包含测试用例的标题
     for i in range(1, 7):
         for heading in soup.find_all(f'h{i}'):
-            if 'Test case' in heading.get_text():
+            text = heading.get_text().strip()
+            # 只匹配真正的测试用例标题格式：数字+Test case+版本号
+            if re.match(r'\d+(\.\d+)*\s+Test case\s*[:\s].*\(Ver:\s*\d+\)', text):
                 test_case_headers.append(heading)
     
     # 在HTML中查找包含"Test case"的段落作为标题
     for p in soup.find_all('p'):
-        if 'Test case' in p.get_text():
-            # 检查是否包含类似"5.6.2 Test case : VCP values"的文本
-            text = p.get_text().strip()
-            # 修改正则表达式以匹配更广泛的测试用例标题格式
-            if re.match(r'\d+(\.\d+)*\s+Test case\s*[:]*', text):
-                test_case_headers.append(p)
-            elif 'Test case' in text and len(text) < 100:  # 放宽条件
-                test_case_headers.append(p)
+        text = p.get_text().strip()
+        # 严格匹配测试用例标题格式：数字+Test case+描述+(Ver: 数字)
+        if re.match(r'\d+(\.\d+)*\s+Test case\s*[:\s].*\(Ver:\s*\d+\)', text):
+            test_case_headers.append(p)
     
     test_cases = []
     
