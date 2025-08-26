@@ -4,6 +4,92 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import json
 
+def extract_test_script_from_html(html_content, page_number):
+    """
+    从HTML内容中提取测试脚本信息
+    专门用于提取测试脚本部分
+    """
+    soup = BeautifulSoup(html_content, 'html.parser')
+    test_script = []
+    
+    # 查找测试脚本描述部分
+    all_paragraphs = soup.find_all('p')
+    
+    # 查找"Test Script Description"或包含步骤的段落
+    found_script_start = False
+    current_step = None
+    step_counter = 1
+    
+    for p in all_paragraphs:
+        text = p.get_text().strip()
+        
+        # 跳过空行
+        if not text:
+            continue
+            
+        # 查找测试脚本开始标记
+        if 'Test Script Description' in text:
+            found_script_start = True
+            continue
+            
+        if found_script_start:
+            # 检查是否是步骤数字
+            step_match = re.match(r'^\s*(\d+)\s*$', text)
+            if step_match:
+                # 保存前一个步骤
+                if current_step and (current_step["action"] or current_step["expected_result"]):
+                    test_script.append(current_step)
+                
+                current_step = {
+                    "step": str(step_counter),
+                    "action": "",
+                    "expected_result": ""
+                }
+                step_counter += 1
+                continue
+            
+            # 收集动作和预期结果
+            if current_step:
+                # 通过HTML结构判断是动作还是预期结果
+                style = p.get('style', '')
+                left_match = re.search(r'left:(\d+)px', style)
+                left_pos = int(left_match.group(1)) if left_match else 0
+                
+                # 根据位置判断内容类型
+                if left_pos < 300:  # 动作区域
+                    if current_step["action"]:
+                        current_step["action"] += " " + text
+                    else:
+                        current_step["action"] = text
+                else:  # 预期结果区域
+                    if current_step["expected_result"]:
+                        current_step["expected_result"] += " " + text
+                    else:
+                        current_step["expected_result"] = text
+    
+    # 添加最后一个步骤
+    if current_step and (current_step["action"] or current_step["expected_result"]):
+        test_script.append(current_step)
+    
+    return test_script
+
+def has_test_script_only(html_content):
+    """
+    检查页面是否只包含测试脚本（没有测试用例标题）
+    """
+    soup = BeautifulSoup(html_content, 'html.parser')
+    text = soup.get_text()
+    
+    # 检查是否有测试用例标题 - 放宽匹配条件
+    has_test_case = bool(re.search(r'\d+(\.\d+)*\s+Test case', text, re.IGNORECASE))
+    
+    # 检查是否有测试脚本 - 更精确地查找测试脚本
+    has_script = ('Test Script Description' in text or 
+                 'Test Script' in text or
+                 re.search(r'Step\s+\d+', text, re.IGNORECASE))
+    
+    return has_script and not has_test_case
+
 def extract_test_cases_from_html(html_content, page_number):
     """
     从HTML内容中提取测试用例信息
@@ -27,9 +113,8 @@ def extract_test_cases_from_html(html_content, page_number):
             # 修改正则表达式以匹配更广泛的测试用例标题格式
             if re.match(r'\d+(\.\d+)*\s+Test case\s*[:]*', text):
                 test_case_headers.append(p)
-            else:
-                # 添加调试信息
-                print(f"Potential test case title found: {text}")
+            elif 'Test case' in text and len(text) < 100:  # 放宽条件
+                test_case_headers.append(p)
     
     test_cases = []
     
@@ -369,6 +454,7 @@ def extract_test_cases_from_html(html_content, page_number):
 def process_html_files(input_dir, output_dir):
     """
     处理目录中的所有HTML文件，提取测试用例并保存为JSON文件
+    支持跨页的测试用例分析
     """
     # 创建输出目录
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -378,6 +464,10 @@ def process_html_files(input_dir, output_dir):
     html_files.sort(key=lambda x: int(re.search(r'CC_DVM-(\d+)\.html', x.name).group(1)) if re.search(r'CC_DVM-(\d+)\.html', x.name) else 0)
     
     all_test_cases = []
+    
+    # 用于跟踪跨页的测试用例
+    pending_test_cases = {}
+    pending_test_scripts = {}  # 用于存储测试脚本，按test_case_id索引
     
     for html_file in html_files:
         print(f"Processing {html_file.name}...")
@@ -396,15 +486,152 @@ def process_html_files(input_dir, output_dir):
         # 提取测试用例
         test_cases = extract_test_cases_from_html(html_content, page_number)
         
-        # 添加到总列表
-        all_test_cases.extend(test_cases)
+        # 处理跨页的测试用例
+        for test_case in test_cases:
+            test_case_id = test_case.get("test_case_id", "")
+            
+            if test_case_id in pending_test_cases:
+                # 合并跨页的测试脚本
+                existing_case = pending_test_cases[test_case_id]
+                existing_case["test_script"].extend(test_case.get("test_script", []))
+                
+                # 如果当前页面有完整的测试用例信息，更新其他字段
+                if test_case.get("purpose"):
+                    existing_case["purpose"] = test_case["purpose"]
+                if test_case.get("precondition"):
+                    existing_case["precondition"] = test_case["precondition"]
+                if test_case.get("description"):
+                    existing_case["description"] = test_case["description"]
+                if test_case.get("requirements"):
+                    existing_case["requirements"] = test_case["requirements"]
+                
+                # 如果当前页面有测试脚本，说明跨页结束，添加到最终结果
+                if test_case.get("test_script"):
+                    all_test_cases.append(existing_case)
+                    del pending_test_cases[test_case_id]
+            else:
+                # 如果是新测试用例，检查是否有测试脚本
+                if test_case.get("test_script"):
+                    # 有测试脚本，检查是否应该与之前的测试用例合并
+                    # 查找是否有相同标题的待处理测试用例
+                    matching_pending_case = None
+                    for pending_id, pending_case in pending_test_cases.items():
+                        if pending_case.get("title") == test_case.get("title") and not pending_case.get("test_script"):
+                            matching_pending_case = pending_case
+                            break
+                    
+                    if matching_pending_case:
+                        # 合并测试脚本到待处理测试用例
+                        matching_pending_case["test_script"] = test_case["test_script"]
+                        # 更新其他字段
+                        if test_case.get("purpose"):
+                            matching_pending_case["purpose"] = test_case["purpose"]
+                        if test_case.get("precondition"):
+                            matching_pending_case["precondition"] = test_case["precondition"]
+                        if test_case.get("description"):
+                            matching_pending_case["description"] = test_case["description"]
+                        if test_case.get("requirements"):
+                            matching_pending_case["requirements"] = test_case["requirements"]
+                    else:
+                        # 没有匹配的待处理测试用例，直接添加到结果
+                        all_test_cases.append(test_case)
+                else:
+                    # 没有测试脚本，可能是跨页的开始，暂存起来
+                    pending_test_cases[test_case_id] = test_case
         
-        # 保存单个文件的测试用例
+        # 特殊处理：如果当前页面只有测试脚本没有测试用例信息（如第14页）
+        # 查找上一页的待处理测试用例并尝试合并测试脚本
+        if page_number > 1:
+            # 检查当前页面是否只有测试脚本，没有测试用例信息
+            has_only_test_scripts = False
+            for test_case in test_cases:
+                if test_case.get("test_script") and not test_case.get("test_case_id") and not test_case.get("title").startswith("Test case"):
+                    has_only_test_scripts = True
+                    break
+            
+            # 或者检查当前页面是否有测试脚本，但页面编号是连续的（如13->14）
+            if any(tc.get("test_script") for tc in test_cases):
+                prev_page = page_number - 1
+                # 查找上一页是否有待处理的测试用例
+                for pending_id, pending_case in list(pending_test_cases.items()):
+                    if pending_case.get("page_number") == prev_page and not pending_case.get("test_script"):
+                        # 将当前页面的测试脚本合并到上一页的测试用例中
+                        for test_case in test_cases:
+                            if test_case.get("test_script"):
+                                pending_case["test_script"] = test_case["test_script"]
+                                # 标记为已处理
+                                test_case["_processed"] = True
+                                print(f"Merged test script from page {page_number} to test case from page {prev_page}: {pending_case.get('title')}")
+                                
+                                # 如果找到了匹配的测试用例，将其从待处理列表中移除并添加到最终结果
+                                if pending_case.get("test_case_id"):
+                                    all_test_cases.append(pending_case)
+                                    del pending_test_cases[pending_id]
+                                break
+        
+        # 处理跨页测试脚本合并
+        next_page_num = page_number + 1
+        next_page_file = Path(input_dir) / f"CC_DVM-{next_page_num}.html"
+        
+        if next_page_file.exists():
+            with open(next_page_file, 'r', encoding='utf-8') as f:
+                next_html_content = f.read()
+            
+            if has_test_script_only(next_html_content):
+                test_script = extract_test_script_from_html(next_html_content, next_page_num)
+                
+                if test_script:
+                    for test_case in test_cases:
+                        if not test_case.get("test_script") and test_case.get("test_case_id"):
+                            test_case["test_script"] = test_script
+                            break
+        
+        # 保存单个页面的测试用例
         if test_cases:
             output_file = Path(output_dir) / f"test_cases_page_{page_number}.json"
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(test_cases, f, ensure_ascii=False, indent=2)
             print(f"Saved {len(test_cases)} test cases to {output_file}")
+    
+    # 保存当前页面的测试用例
+    if test_cases:
+        output_file = Path(output_dir) / f"test_cases_page_{page_number}.json"
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(test_cases, f, ensure_ascii=False, indent=2)
+        print(f"Saved {len(test_cases)} test cases to {output_file}")
+    
+    # 处理剩余的跨页测试用例（没有找到后续页面的）
+    # 最后检查是否有测试用例缺少测试脚本，尝试从下一页获取
+    for test_case_id, test_case in list(pending_test_cases.items()):
+        # 如果这个测试用例没有测试脚本，但页面编号小于最大页面
+        if not test_case.get("test_script") and test_case.get("page_number", 0) < len(html_files):
+            next_page = test_case.get("page_number") + 1
+            # 检查下一页文件是否存在
+            next_file = None
+            for f in html_files:
+                if f"CC_DVM-{next_page}.html" in str(f):
+                    next_file = f
+                    break
+            
+            if next_file and next_file.exists():
+                print(f"Checking next page {next_page} for test script for test case: {test_case.get('title')}")
+                # 读取下一页的内容
+                with open(next_file, 'r', encoding='utf-8') as f:
+                    next_html_content = f.read()
+                
+                # 检查下一页是否只有测试脚本
+                if has_test_script_only(next_html_content):
+                    # 提取测试脚本
+                    next_test_script = extract_test_script_from_html(next_html_content, next_page)
+                    if next_test_script and len(next_test_script) > 0:
+                        test_case["test_script"] = next_test_script
+                        print(f"Found and merged test script from page {next_page} for test case: {test_case.get('title')}")
+        
+        # 无论是否找到测试脚本，都将测试用例添加到最终结果
+        all_test_cases.append(test_case)
+        
+    # 清理已处理的待处理测试用例
+    pending_test_cases.clear()
     
     # 保存所有测试用例到一个文件
     all_output_file = Path(output_dir) / "all_test_cases.json"
