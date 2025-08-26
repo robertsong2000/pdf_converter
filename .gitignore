@@ -29,3 +29,8 @@ output.md
 
 # Ignore testcases directories
 testcases_*/
+test_cases_*/
+
+# Ignore testspecs_pdf directories and DVM.md files
+testspecs_pdf/
+*DVM.md
