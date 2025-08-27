@@ -33,8 +33,8 @@ def extract_api_from_html(html_content, page_number):
             break
     
     if availability_chart:
-        # 处理Availability Chart页面
-        return extract_availability_chart(soup, page_number)
+        # 跳过Availability Chart页面，不处理
+        return []
     
     # 查找函数名 - 以粗体显示在页面右侧
     function_name = None
@@ -67,99 +67,7 @@ def extract_api_from_html(html_content, page_number):
     api_list.extend(function_details)
     return api_list
 
-def extract_availability_chart(soup, page_number):
-    """
-    从Availability Chart页面提取函数列表
-    
-    参数:
-        soup: BeautifulSoup对象
-        page_number: 页码
-    
-    返回:
-        list: 函数基本信息列表
-    """
-    api_list = []
-    
-    # 查找所有段落
-    all_paragraphs = soup.find_all('p')
-    
-    # 按top位置排序，确保按行处理
-    paragraph_data = []
-    for p in all_paragraphs:
-        text = p.get_text().strip()
-        style = p.get('style', '')
-        
-        if not text or text in ['Availability Chart', '']:
-            continue
-            
-        # 提取left和top位置
-        left_match = re.search(r'left:(\d+)px', style)
-        top_match = re.search(r'top:(\d+)px', style)
-        
-        if not left_match or not top_match:
-            continue
-            
-        left = int(left_match.group(1))
-        top = int(top_match.group(1))
-        
-        paragraph_data.append({
-            'element': p,
-            'text': text,
-            'left': left,
-            'top': top
-        })
-    
-    # 按top位置分组
-    lines = {}
-    for data in paragraph_data:
-        top = data['top']
-        if top not in lines:
-            lines[top] = []
-        lines[top].append(data)
-    
-    # 处理每一行
-    for top, items in lines.items():
-        if top <= 100:  # 跳过标题区域
-            continue
-            
-        # 按left位置排序
-        items.sort(key=lambda x: x['left'])
-        
-        # 查找函数名（通常是第一个有效项，且不是"All"等）
-        function_name = None
-        for item in items:
-            text = item['text']
-            left = item['left']
-            
-            # 函数名通常在左侧，且符合驼峰命名
-            if left < 300 and re.match(r'^[A-Za-z][a-zA-Z0-9]*$', text):
-                # 排除常见的非函数名
-                if text not in ['All', 'Prior', 'O', 'S', 'and', 'after']:
-                    function_name = text
-                    break
-        
-        if function_name:
-            # 收集该行的其他信息作为可用性
-            availability_parts = []
-            for item in items:
-                if item['text'] != function_name and item['left'] > 300:
-                    availability_parts.append(item['text'])
-            
-            availability = ' '.join(availability_parts).strip()
-            
-            api_info = {
-                "function_name": function_name,
-                "syntax": f"{function_name}()",
-                "description": f"CAPL函数 {function_name}",
-                "parameters": [],
-                "returns": "",
-                "availability": availability,
-                "observation": "",
-                "branch_compatibility": {}
-            }
-            api_list.append(api_info)
-    
-    return api_list
+
 
 def extract_function_details(soup, function_name, function_heading):
     """
