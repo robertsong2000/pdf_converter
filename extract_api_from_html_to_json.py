@@ -525,7 +525,7 @@ def process_html_files(input_dir, output_dir):
     
     # 保存所有API信息的汇总文件
     if all_apis:
-        summary_file = output_path / "all_apis.json"
+        summary_file = output_path / "capl_api_lists.json"
         with open(summary_file, 'w', encoding='utf-8') as f:
             json.dump(all_apis, f, ensure_ascii=False, indent=2)
         
