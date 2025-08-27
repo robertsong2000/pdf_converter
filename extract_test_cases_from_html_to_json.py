@@ -405,43 +405,60 @@ def extract_test_cases_from_html(html_content, page_number):
                         # 提取列数据
                         columns = [item['text'] for item in row_items]
                         
-                        # 根据列数和位置判断数据结构
-                        if len(columns) >= 4:
-                            # 标准的4列数据：Requirement, Req ID, Ver, Status
-                            requirement = {
-                                "requirement": columns[0],
-                                "req_id": columns[1],
-                                "ver": columns[2] if len(columns) > 2 else "",
-                                "status": columns[3] if len(columns) > 3 else ""
-                            }
-                            test_case["requirements"].append(requirement)
-                        elif len(columns) == 3:
-                            # 3列数据：Requirement, Req ID, Ver
-                            requirement = {
-                                "requirement": columns[0],
-                                "req_id": columns[1],
-                                "ver": columns[2],
-                                "status": ""
-                            }
-                            test_case["requirements"].append(requirement)
-                        elif len(columns) == 2:
-                            # 2列数据：Requirement, Req ID
-                            requirement = {
-                                "requirement": columns[0],
-                                "req_id": columns[1],
-                                "ver": "",
-                                "status": ""
-                            }
-                            test_case["requirements"].append(requirement)
-                        elif len(columns) == 1 and columns[0] and not columns[0].startswith('Test'):
-                            # 单列数据：只有Requirement
-                            requirement = {
-                                "requirement": columns[0],
-                                "req_id": "",
-                                "ver": "",
-                                "status": ""
-                            }
-                            test_case["requirements"].append(requirement)
+                        # 跳过表头行（包含"Requirement"和"Req ID"的行）
+                    is_header = False
+                    for col in columns:
+                        if 'Requirement' in col and 'Req ID' in col:
+                            is_header = True
+                            break
+                        elif 'Req ID' in col and 'Ver' in col:
+                            is_header = True
+                            break
+                    
+                    if is_header:
+                        continue
+                    
+                    # 跳过完全匹配表头文本的行
+                    if len(columns) >= 2 and columns[0] == "Requirement" and columns[1] == "Req ID":
+                        continue
+                    
+                    # 根据列数和位置判断数据结构
+                    if len(columns) >= 4:
+                        # 标准的4列数据：Requirement, Req ID, Ver, Status
+                        requirement = {
+                            "requirement": columns[0],
+                            "req_id": columns[1],
+                            "ver": columns[2] if len(columns) > 2 else "",
+                            "status": columns[3] if len(columns) > 3 else ""
+                        }
+                        test_case["requirements"].append(requirement)
+                    elif len(columns) == 3:
+                        # 3列数据：Requirement, Req ID, Ver
+                        requirement = {
+                            "requirement": columns[0],
+                            "req_id": columns[1],
+                            "ver": columns[2],
+                            "status": ""
+                        }
+                        test_case["requirements"].append(requirement)
+                    elif len(columns) == 2:
+                        # 2列数据：Requirement, Req ID
+                        requirement = {
+                            "requirement": columns[0],
+                            "req_id": columns[1],
+                            "ver": "",
+                            "status": ""
+                        }
+                        test_case["requirements"].append(requirement)
+                    elif len(columns) == 1 and columns[0] and not columns[0].startswith('Test'):
+                        # 单列数据：只有Requirement
+                        requirement = {
+                            "requirement": columns[0],
+                            "req_id": "",
+                            "ver": "",
+                            "status": ""
+                        }
+                        test_case["requirements"].append(requirement)
             
             # 查找测试脚本描述
             if 'Test Script Description' in text:
