@@ -36,15 +36,20 @@ def extract_api_from_html(html_content, page_number):
         # 跳过Availability Chart页面，不处理
         return []
     
-    # 查找函数名 - 以粗体显示在页面右侧
+    # 查找函数名 - 以粗体显示在页面右侧，有特定的样式
     function_name = None
     function_heading = None
     
-    # 收集所有段落信息
-    all_paragraphs = []
+    # 收集所有可能的函数名候选
+    function_candidates = []
+    
     for p in soup.find_all('p'):
         text = p.get_text().strip()
+        if not text:
+            continue
+            
         style = p.get('style', '')
+        class_name = p.get('class', [])
         
         left_match = re.search(r'left:(\d+)px', style)
         top_match = re.search(r'top:(\d+)px', style)
@@ -53,11 +58,58 @@ def extract_api_from_html(html_content, page_number):
             left = int(left_match.group(1))
             top = int(top_match.group(1))
             
-            # 函数名通常在右侧（left > 400）且是单个单词
-            if left > 400 and re.match(r'^[A-Za-z][a-zA-Z0-9]+$', text):
-                function_name = text
-                function_heading = p
-                break
+            # 函数名特征：
+            # 1. 位置在右侧 (left > 400)
+            # 2. 文本是有效的函数名格式
+            # 3. 有粗体样式 (ft02, ft01等)
+            # 4. 不是常见参数名或普通文本
+            
+            is_valid_function_name = (
+                left > 400 and 
+                re.match(r'^[a-zA-Z][a-zA-Z0-9_]+$', text) and
+                len(text) > 2 and  # 排除过短的名字
+                len(text) <= 30 and  # 排除过长的名字
+                text not in {'USA', 'CAN', 'INT', 'CHAR', 'FLOAT', 'DOUBLE', 'VOID', 'LONG', 'SHORT', 'BYTE'} and
+                not text.endswith('Name') and  # 排除EnvVarName这类参数名
+                not text.isupper()  # 排除全大写的普通文本
+            )
+            
+            if is_valid_function_name:
+                # 检查是否有函数特征样式
+                has_function_style = any('ft0' in str(cls) for cls in class_name)
+                
+                function_candidates.append({
+                    'text': text,
+                    'element': p,
+                    'top': top,
+                    'left': left,
+                    'score': (left - 400) + (10 if has_function_style else 0)
+                })
+    
+    # 选择最可能的函数名
+    if function_candidates:
+        # 按分数排序，选择分数最高的
+        function_candidates.sort(key=lambda x: x['score'], reverse=True)
+        
+        # 验证是否有对应的Syntax section
+        best_candidate = function_candidates[0]
+        
+        # 检查后续是否有Syntax section
+        has_syntax = False
+        for p in soup.find_all('p'):
+            text = p.get_text().strip()
+            if 'Syntax' in text and 'ft03' in str(p.get('class', [])):
+                p_style = p.get('style', '')
+                syntax_top_match = re.search(r'top:(\d+)px', p_style)
+                if syntax_top_match:
+                    syntax_top = int(syntax_top_match.group(1))
+                    if abs(syntax_top - best_candidate['top']) < 200:  # Syntax应该在函数名附近
+                        has_syntax = True
+                        break
+        
+        if has_syntax:
+            function_name = best_candidate['text']
+            function_heading = best_candidate['element']
     
     if not function_name or not function_heading:
         return api_list
