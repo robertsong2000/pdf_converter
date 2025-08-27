@@ -38,7 +38,7 @@ def extract_api_from_html(html_content, page_number):
     
     # 查找函数名 - 以粗体显示在页面右侧
     function_name = None
-    function_top = None
+    function_heading = None
     
     # 收集所有段落信息
     all_paragraphs = []
@@ -56,102 +56,15 @@ def extract_api_from_html(html_content, page_number):
             # 函数名通常在右侧（left > 400）且是单个单词
             if left > 400 and re.match(r'^[A-Za-z][a-zA-Z0-9]+$', text):
                 function_name = text
-                function_top = top
+                function_heading = p
                 break
     
-    if not function_name:
+    if not function_name or not function_heading:
         return api_list
     
-    # 创建API信息结构
-    api_info = {
-        "function_name": function_name,
-        "syntax": "",
-        "description": "",
-        "parameters": [],
-        "returns": "",
-        "availability": "",
-        "observation": "",
-        "branch_compatibility": {},
-        "related_functions": []
-    }
-    
-    # 按top位置分组，查找各个section
-    sections = {}
-    section_markers = {
-        'Syntax': 'syntax',
-        'Description': 'description',
-        'Parameter': 'parameters',
-        'Returns': 'returns',
-        'Availability': 'availability',
-        'Observation': 'observation',
-        'Branch Compatibility': 'branch_compatibility',
-        'Related Functions': 'related_functions'
-    }
-    
-    # 收集所有段落并按top排序
-    paragraphs = []
-    for p in soup.find_all('p'):
-        text = p.get_text().strip()
-        style = p.get('style', '')
-        
-        left_match = re.search(r'left:(\d+)px', style)
-        top_match = re.search(r'top:(\d+)px', style)
-        
-        if left_match and top_match:
-            left = int(left_match.group(1))
-            top = int(top_match.group(1))
-            
-            # 跳过函数名本身
-            if text == function_name and left > 400:
-                continue
-                
-            paragraphs.append({
-                'text': text,
-                'left': left,
-                'top': top,
-                'element': p
-            })
-    
-    # 按top位置排序
-    paragraphs.sort(key=lambda x: x['top'])
-    
-    # 查找section标题和内容
-    current_section = None
-    section_content = []
-    
-    for para in paragraphs:
-        text = para['text']
-        left = para['left']
-        top = para['top']
-        
-        # 检查是否是section标题
-        found_section = None
-        for marker, section_key in section_markers.items():
-            # 更精确的匹配section标题，避免误匹配
-            if (marker.lower() in text.lower() and 
-                left < 200 and 
-                len(text) <= len(marker) + 5):  # 允许少量额外字符
-                if current_section:
-                    # 保存前一个section的内容
-                    content = " ".join(section_content).strip()
-                    if content:
-                        save_section_content(api_info, current_section, [content])
-                
-                current_section = section_key
-                section_content = []
-                found_section = True
-                break
-        
-        if not found_section and current_section and left > 150:  # 内容通常在右侧
-            section_content.append(text)
-    
-    # 保存最后一个section
-    if current_section and section_content:
-        content = " ".join(section_content).strip()
-        if content:
-            save_section_content(api_info, current_section, [content])
-    
-    api_list.append(api_info)
+    # 使用extract_function_details提取详细信息，支持重载函数
+    function_details = extract_function_details(soup, function_name, function_heading)
+    api_list.extend(function_details)
     return api_list
 
 def extract_availability_chart(soup, page_number):
@@ -242,8 +155,7 @@ def extract_availability_chart(soup, page_number):
                 "returns": "",
                 "availability": availability,
                 "observation": "",
-                "branch_compatibility": {},
-                "related_functions": []
+                "branch_compatibility": {}
             }
             api_list.append(api_info)
     
@@ -259,25 +171,15 @@ def extract_function_details(soup, function_name, function_heading):
         function_heading: 函数名的HTML元素
     
     返回:
-        dict: 函数详细信息
+        list: 函数详细信息列表（支持重载函数）
     """
-    api_info = {
-        "function_name": function_name,
-        "syntax": "",
-        "description": "",
-        "parameters": [],
-        "returns": "",
-        "availability": "",
-        "observation": "",
-        "branch_compatibility": {},
-        "related_functions": []
-    }
+    api_list = []
     
     # 获取函数标题的top位置
     style = function_heading.get('style', '')
     top_match = re.search(r'top:(\d+)px', style)
     if not top_match:
-        return None
+        return api_list
     
     function_top = int(top_match.group(1))
     
@@ -292,11 +194,14 @@ def extract_function_details(soup, function_name, function_heading):
             break
     
     if start_index == 0:
-        return None
+        return api_list
     
     # 收集函数相关信息
     current_section = None
     current_text = []
+    
+    # 存储所有section的内容
+    sections_content = {}
     
     for i in range(start_index, len(all_paragraphs)):
         p = all_paragraphs[i]
@@ -335,7 +240,7 @@ def extract_function_details(soup, function_name, function_heading):
             if marker in text and left < 200:
                 # 保存前一个section的内容
                 if current_section and current_text:
-                    save_section_content(api_info, current_section, current_text)
+                    sections_content[current_section] = current_text
                 
                 current_section = section
                 current_text = [text.replace(marker + ':', '').strip()]
@@ -349,9 +254,67 @@ def extract_function_details(soup, function_name, function_heading):
     
     # 保存最后一个section
     if current_section and current_text:
-        save_section_content(api_info, current_section, current_text)
+        sections_content[current_section] = current_text
     
-    return api_info
+    # 处理syntax section，提取重载函数
+    syntax_content = " ".join(sections_content.get('syntax', [])).strip()
+    func_sig_matches = re.findall(r'\w+\s+\w+\s*\([^)]*\)', syntax_content)
+    
+    if not func_sig_matches:
+        # 如果没有找到函数签名，创建一个默认的API条目
+        api_info = {
+                "function_name": function_name,
+                "syntax": f"{function_name}()",
+                "description": "",
+                "parameters": [],
+                "returns": "",
+                "availability": "",
+                "observation": "",
+                "branch_compatibility": {}
+            }
+        
+        # 填充其他section的内容
+        for section, content_list in sections_content.items():
+            if section != 'syntax':
+                content = " ".join(content_list).strip()
+                if section == 'parameters':
+                    api_info[section] = parse_parameters(content)
+                elif section == 'branch_compatibility':
+                    api_info[section] = parse_branch_compatibility(content)
+                elif section == 'related_functions':
+                    api_info[section] = parse_related_functions(content)
+                else:
+                    api_info[section] = content
+        
+        api_list.append(api_info)
+    else:
+        # 为每个重载函数创建单独的API条目
+            for i, signature in enumerate(func_sig_matches):
+                api_info = {
+                    "function_name": function_name,
+                    "syntax": signature,
+                    "description": "",
+                    "parameters": [],
+                    "returns": "",
+                    "availability": "",
+                    "observation": "",
+                    "branch_compatibility": {}
+                }
+            
+            # 填充其他section的内容
+            for section, content_list in sections_content.items():
+                if section != 'syntax' and section != 'related_functions':
+                    content = " ".join(content_list).strip()
+                    if section == 'parameters':
+                        api_info[section] = parse_parameters(content)
+                    elif section == 'branch_compatibility':
+                        api_info[section] = parse_branch_compatibility(content)
+                    else:
+                        api_info[section] = content
+            
+            api_list.append(api_info)
+    
+    return api_list
 
 def save_section_content(api_info, section, text_list):
     """
@@ -362,12 +325,17 @@ def save_section_content(api_info, section, text_list):
     if section == 'syntax':
         # 清理语法格式
         syntax = content.replace('\n', ' ').strip()
-        # 提取函数签名
-        func_sig_match = re.search(r'(\w+\s+)?(\w+\s*\([^)]*\))', syntax)
-        if func_sig_match:
-            api_info['syntax'] = func_sig_match.group(2)
-        else:
-            api_info['syntax'] = syntax
+        # 提取所有函数签名，支持重载函数
+        # 匹配格式：返回类型 函数名(参数列表)
+        func_sig_matches = re.findall(r'\w+\s+\w+\s*\([^)]*\)', syntax)
+        if func_sig_matches:
+            if len(func_sig_matches) == 1:
+                api_info['syntax'] = func_sig_matches[0]
+            else:
+                # 如果有多个函数签名（重载），创建多个API条目
+                api_info['syntax'] = func_sig_matches[0]
+                # 保存额外的重载函数供后续处理
+                api_info['overloads'] = func_sig_matches[1:]
             
     elif section == 'description':
         api_info['description'] = content
@@ -391,14 +359,7 @@ def save_section_content(api_info, section, text_list):
         compatibility = parse_branch_compatibility(content)
         api_info['branch_compatibility'] = compatibility
         
-    elif section == 'related_functions':
-            # 解析相关函数，只保留真正的函数名
-            lines = [line.strip() for line in content.split('\n') if line.strip() and line.strip() != 'N/A']
-            valid_functions = []
-            for line in lines:
-                if re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', line.strip()):
-                    valid_functions.append(line.strip())
-            api_info['related_functions'] = valid_functions
+
 
 def parse_parameters(content):
     """
@@ -464,20 +425,7 @@ def parse_branch_compatibility(content):
     
     return compatibility
 
-def parse_related_functions(content):
-    """
-    解析相关函数列表
-    """
-    functions = []
-    
-    # 分割函数名
-    func_names = re.split(r'[,\s]+', content)
-    for name in func_names:
-        name = name.strip()
-        if name and name != '':
-            functions.append(name)
-    
-    return functions
+
 
 def process_html_files(input_dir, output_dir):
     """
