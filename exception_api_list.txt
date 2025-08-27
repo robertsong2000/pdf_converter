@@ -1,0 +1,18 @@
+# CAPL函数排除列表
+# 每行一个函数名，支持注释（以#开头）
+# 示例：
+beep
+fileReadArray
+fileReadFloat
+FileReadInt
+FileReadString
+fileWriteFloat
+fileWriteInt
+fileWriteString
+seqFileClose
+seqFileGetBlock
+seqFileGetLine
+seqFileGetLineSZ
+seqFileLoad
+seqFileRewind
+setMsgTime

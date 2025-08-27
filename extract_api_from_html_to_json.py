@@ -445,6 +445,31 @@ def parse_branch_compatibility(content):
 
 
 
+def load_exception_list():
+    """
+    加载exception_api_list.txt文件中的排除函数列表
+    
+    返回:
+        set: 需要排除的函数名集合
+    """
+    exception_file = Path('exception_api_list.txt')
+    exception_functions = set()
+    
+    if exception_file.exists():
+        try:
+            with open(exception_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):  # 忽略空行和注释
+                        exception_functions.add(line.lower())  # 转换为小写以便不区分大小写
+            print(f"已加载 {len(exception_functions)} 个需要排除的函数")
+        except Exception as e:
+            print(f"读取exception_api_list.txt时出错: {e}")
+    else:
+        print("未找到exception_api_list.txt文件，将不排除任何函数")
+    
+    return exception_functions
+
 def process_html_files(input_dir, output_dir):
     """
     处理目录中的所有HTML文件
@@ -458,6 +483,9 @@ def process_html_files(input_dir, output_dir):
     
     # 创建输出目录
     output_path.mkdir(parents=True, exist_ok=True)
+    
+    # 加载排除函数列表
+    exception_functions = load_exception_list()
     
     all_apis = []
     
@@ -475,14 +503,22 @@ def process_html_files(input_dir, output_dir):
             # 提取API信息
             apis = extract_api_from_html(html_content, html_file.stem)
             
-            if apis:
+            # 过滤掉在排除列表中的函数
+            filtered_apis = []
+            for api in apis:
+                if api.get('function_name', '').lower() not in exception_functions:
+                    filtered_apis.append(api)
+                else:
+                    print(f"  排除函数: {api.get('function_name', '')}")
+            
+            if filtered_apis:
                 # 保存单个文件的API信息
                 output_file = output_path / f"apis_{html_file.stem}.json"
                 with open(output_file, 'w', encoding='utf-8') as f:
-                    json.dump(apis, f, ensure_ascii=False, indent=2)
+                    json.dump(filtered_apis, f, ensure_ascii=False, indent=2)
                 
-                all_apis.extend(apis)
-                print(f"  提取了 {len(apis)} 个API")
+                all_apis.extend(filtered_apis)
+                print(f"  提取了 {len(filtered_apis)} 个API (已排除 {len(apis) - len(filtered_apis)} 个)")
             
         except Exception as e:
             print(f"处理文件 {html_file.name} 时出错: {e}")
