@@ -217,6 +217,10 @@ def extract_function_details(soup, function_name, function_heading):
                         api_info[section] = parse_parameters(content)
                     elif section == 'branch_compatibility':
                         api_info[section] = parse_branch_compatibility(content)
+                    elif section == 'description':
+                        # 去掉Description前缀
+                        description = content.replace('Description:', '').replace('Description', '').strip()
+                        api_info[section] = description
                     else:
                         api_info[section] = content
             
@@ -246,7 +250,9 @@ def save_section_content(api_info, section, text_list):
                 api_info['overloads'] = func_sig_matches[1:]
             
     elif section == 'description':
-        api_info['description'] = content
+        # 去掉Description前缀
+        description = content.replace('Description:', '').replace('Description', '').strip()
+        api_info['description'] = description
         
     elif section == 'parameters':
         # 解析参数
