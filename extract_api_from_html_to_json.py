@@ -72,8 +72,7 @@ def extract_api_from_html(html_content, page_number):
         "availability": "",
         "observation": "",
         "branch_compatibility": {},
-        "related_functions": [],
-        "page_number": page_number
+        "related_functions": []
     }
     
     # 按top位置分组，查找各个section
@@ -244,8 +243,7 @@ def extract_availability_chart(soup, page_number):
                 "availability": availability,
                 "observation": "",
                 "branch_compatibility": {},
-                "related_functions": [],
-                "page_number": page_number
+                "related_functions": []
             }
             api_list.append(api_info)
     
