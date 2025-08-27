@@ -151,7 +151,7 @@ def extract_function_details(soup, function_name, function_heading):
                     sections_content[current_section] = current_text
                 
                 current_section = section
-                current_text = [text.replace(marker + ':', '').strip()]
+                current_text = []  # 不将标题行加入内容
                 found_section = True
                 break
         
@@ -191,6 +191,22 @@ def extract_function_details(soup, function_name, function_heading):
                     api_info[section] = parse_branch_compatibility(content)
                 elif section == 'related_functions':
                     api_info[section] = parse_related_functions(content)
+                elif section == 'description':
+                    # 去掉Description前缀
+                    description = re.sub(r'^\s*[Dd]escription\s*[:\-]?\s*', '', content, flags=re.IGNORECASE).strip()
+                    api_info[section] = description
+                elif section == 'returns':
+                    # 去掉Returns前缀
+                    returns = re.sub(r'^\s*[Rr]eturns?\s*[:\-]?\s*', '', content, flags=re.IGNORECASE).strip()
+                    api_info[section] = returns
+                elif section == 'availability':
+                    # 去掉Availability前缀
+                    availability = re.sub(r'^\s*[Aa]vailability\s*[:\-]?\s*', '', content, flags=re.IGNORECASE).strip()
+                    api_info[section] = availability
+                elif section == 'observation':
+                    # 去掉Observation前缀
+                    observation = re.sub(r'^\s*[Oo]bservation\s*[:\-]?\s*', '', content, flags=re.IGNORECASE).strip()
+                    api_info[section] = observation
                 else:
                     api_info[section] = content
         
@@ -251,7 +267,7 @@ def save_section_content(api_info, section, text_list):
             
     elif section == 'description':
         # 去掉Description前缀
-        description = content.replace('Description:', '').replace('Description', '').strip()
+        description = re.sub(r'^\s*[Dd]escription\s*[:\-]?\s*', '', content, flags=re.IGNORECASE).strip()
         api_info['description'] = description
         
     elif section == 'parameters':
@@ -260,13 +276,19 @@ def save_section_content(api_info, section, text_list):
         api_info['parameters'] = params
         
     elif section == 'returns':
-        api_info['returns'] = content
+        # 去掉Returns前缀
+        returns = re.sub(r'^\s*[Rr]eturns?\s*[:\-]?\s*', '', content, flags=re.IGNORECASE).strip()
+        api_info['returns'] = returns
         
     elif section == 'availability':
-        api_info['availability'] = content
+        # 去掉Availability前缀
+        availability = re.sub(r'^\s*[Aa]vailability\s*[:\-]?\s*', '', content, flags=re.IGNORECASE).strip()
+        api_info['availability'] = availability
         
     elif section == 'observation':
-        api_info['observation'] = content
+        # 去掉Observation前缀
+        observation = re.sub(r'^\s*[Oo]bservation\s*[:\-]?\s*', '', content, flags=re.IGNORECASE).strip()
+        api_info['observation'] = observation
         
     elif section == 'branch_compatibility':
         # 解析分支兼容性
@@ -278,45 +300,75 @@ def save_section_content(api_info, section, text_list):
 def parse_parameters(content):
     """
     解析参数字符串为结构化数据
+    格式：参数名称 = 参数描述
+    根据HTML中的格式，参数是以<br/>分隔的，每行都是"参数名 = 描述"格式
+    例如：
+    section = section within file
+    entry = name of variable
+    def = float value to write
+    file = name of file
     """
     parameters = []
     
     # 清理内容
-    content = content.replace('=', ' = ')
+    content = content.strip()
+    if not content:
+        return parameters
     
-    # 分割参数
-    param_parts = re.split(r'[,;]\s*', content)
+    # 移除"Parameter"或"Parameters"前缀
+    content = re.sub(r'^\s*parameters?\s*[:\-]?\s*', '', content, flags=re.IGNORECASE)
     
-    for part in param_parts:
-        if not part.strip():
-            continue
-            
-        # 匹配参数格式：类型 名称 = 描述
-        match = re.match(r'(\w+(?:\s*\[\s*\])?)\s+(\w+)\s*=\s*(.+)', part.strip())
-        if match:
-            param_type, param_name, param_desc = match.groups()
+    # 首先清理HTML标签
+    content = re.sub(r'<[^>]+>', '', content)
+    
+    # 使用正则表达式查找所有 "参数名 = 描述" 的匹配
+    # 匹配模式：参数名 = 描述（直到下一个参数开始或行尾）
+    pattern = r'([a-zA-Z_]\w*)\s*=\s*([^=]*?)(?=(?:\s+[a-zA-Z_]\w*\s*=)|\n|$)'
+    matches = re.findall(pattern, content, re.IGNORECASE)
+    
+    # 如果没有找到匹配，尝试另一种模式
+    if not matches:
+        # 按行分割，每行一个参数
+        lines = re.split(r'\n|\r\n', content)
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # 匹配参数格式：名称 = 描述
+            match = re.match(r'^([^=]+)\s*=\s*(.+)$', line)
+            if match:
+                matches.append((match.group(1).strip(), match.group(2).strip()))
+    
+    # 处理找到的参数
+    for param_name, param_desc in matches:
+        param_name = param_name.strip()
+        param_desc = param_desc.strip()
+        
+        # 清理参数名 - 移除前面的类型声明和修饰符
+        # 例如："char section[]" -> "section"
+        
+        # 1. 移除类型关键字
+        param_name = re.sub(r'^(?:char|long|float|int|dword|void|double|short|byte)\s+', '', param_name)
+        
+        # 2. 移除数组符号 [] 和指针符号 *
+        param_name = re.sub(r'\[\s*\]', '', param_name)  # 移除[]
+        param_name = re.sub(r'\*', '', param_name)  # 移除*
+        
+        # 3. 清理空格
+        param_name = re.sub(r'\s+', ' ', param_name).strip()
+        
+        # 4. 确保参数名只包含有效字符
+        param_name = re.sub(r'[^a-zA-Z0-9_]', '', param_name)
+        
+        # 清理参数描述
+        param_desc = re.sub(r'\s+', ' ', param_desc).strip()
+        
+        if param_name and len(param_name) <= 30:  # 合理的参数名长度限制
             parameters.append({
                 "name": param_name,
-                "type": param_type,
                 "description": param_desc
             })
-        else:
-            # 尝试匹配简单格式：名称 = 描述
-            match = re.match(r'(\w+)\s*=\s*(.+)', part.strip())
-            if match:
-                param_name, param_desc = match.groups()
-                parameters.append({
-                    "name": param_name,
-                    "type": "unknown",
-                    "description": param_desc
-                })
-            else:
-                # 作为整体描述
-                parameters.append({
-                    "name": "unknown",
-                    "type": "unknown",
-                    "description": part.strip()
-                })
     
     return parameters
 
